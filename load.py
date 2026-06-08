@@ -1,299 +1,184 @@
+"""
+load.py — Create tables in Supabase and load transformed data.
+
+Reads SUPABASE_DB_URI from .env (via python-dotenv).
+Uses psycopg2 for direct PostgreSQL access.
+"""
+
+import json
 import os
-import pandas as pd
-from pathlib import Path
-from sqlalchemy import create_engine, text
-import logging
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 
-# ----------------------------
-# SETUP
-# ----------------------------
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+load_dotenv()
 
-DAILY_FILE = DATA_DIR / "ui_daily_view.csv"
-CURRENT_FILE = DATA_DIR / "ui_current_weather.csv"
-
-LOG_FILE = BASE_DIR / "etl_error.log"
-
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
-
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger().addHandler(console)
-
-
-# ----------------------------
-# DB CONNECTION
-# ----------------------------
-def get_database_url():
-    load_dotenv(BASE_DIR / ".env")
-    return os.getenv("SUPABASE_DB_URL")
-
-
-engine = create_engine(get_database_url())
-
-
-# ----------------------------
-# VALIDATION HELPERS
-# ----------------------------
-def validate_dataframe(df, name):
-    logging.info(f"[VALIDATION START] {name}")
-
-    # NULL CHECK
-    null_counts = df.isnull().sum()
-    if null_counts.any():
-        logging.warning(
-            f"[NULL CHECK] Missing values detected in {name}:\n{null_counts}"
+# Connect to Database
+def _get_conn():
+    uri = os.getenv("SUPABASE_DB_URI")
+    if not uri:
+        raise EnvironmentError(
+            "SUPABASE_DB_URI is not set. "
+        
         )
+    return psycopg2.connect(uri, connect_timeout=15)
 
-    # DUPLICATE CHECK
-    dup_count = df.duplicated().sum()
-    if dup_count > 0:
-        logging.warning(f"[DUPLICATES] {name} contains {dup_count} duplicate rows")
-    else:
-        logging.info(f"[DUPLICATES] No duplicates found in {name}")
+_CREATE_WEATHER = """
+CREATE TABLE IF NOT EXISTS weather_observations (
+    id              SERIAL PRIMARY KEY,
+    location        TEXT        NOT NULL,
+    fetched_at      TIMESTAMPTZ,
+    temperature_f   NUMERIC(5,1),
+    feels_like_f    NUMERIC(5,1),
+    weather_code    INTEGER,
+    condition       TEXT,
+    emoji           TEXT,
+    is_day          BOOLEAN,
+    wind_speed_mph  NUMERIC(5,1),
+    humidity_pct    NUMERIC(5,1),
+    visibility_mi   NUMERIC(6,2),
+    pressure_inhg   NUMERIC(6,2),
+    dew_point_f     NUMERIC(5,1),
+    timezone        TEXT,
+    daily_forecast  JSONB,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+"""
 
-    # EMPTY CHECK
-    if df.empty:
-        raise ValueError(f"[VALIDATION FAILED] {name} is empty")
+_CREATE_AIR = """
+CREATE TABLE IF NOT EXISTS air_quality_observations (
+    id                SERIAL PRIMARY KEY,
+    location          TEXT        NOT NULL,
+    fetched_at        TIMESTAMPTZ,
+    us_aqi            INTEGER,
+    aqi_category      TEXT,
+    aqi_color         TEXT,
+    pm2_5             NUMERIC(8,2),
+    pm10              NUMERIC(8,2),
+    ozone_ppb         NUMERIC(8,2),
+    no2_ppb           NUMERIC(8,2),
+    so2_ppb           NUMERIC(8,2),
+    co_ppb            NUMERIC(8,2),
+    primary_pollutant TEXT,
+    primary_value     NUMERIC(10,3),
+    hourly_trend      JSONB,
+    created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+"""
 
-    logging.info(f"[VALIDATION PASS] {name} rows={len(df)}")
+_CREATE_IDX_WEATHER = """
+CREATE INDEX IF NOT EXISTS idx_weather_location_fetched
+    ON weather_observations (location, fetched_at DESC);
+"""
 
-
-def validate_schema(df, expected_schema, name):
-    logging.info(f"[SCHEMA CHECK] {name}")
-
-    missing_cols = set(expected_schema.keys()) - set(df.columns)
-    extra_cols = set(df.columns) - set(expected_schema.keys())
-
-    if missing_cols:
-        raise ValueError(f"[SCHEMA ERROR] Missing columns in {name}: {missing_cols}")
-
-    if extra_cols:
-        logging.warning(f"[SCHEMA WARNING] Extra columns in {name}: {extra_cols}")
-
-    # datatype validation
-    for col, dtype in expected_schema.items():
-        if not pd.api.types.is_dtype_equal(df[col].dtype, dtype):
-            logging.warning(
-                f"[TYPE WARNING] {name}.{col} expected {dtype}, got {df[col].dtype}"
-            )
-
-    logging.info(f"[SCHEMA PASS] {name}")
-
-
-def validate_ranges(df, name):
-    logging.info(f"[RANGE CHECK] {name}")
-
-    if "temperature" in df.columns:
-        if ((df["temperature"] < -60) | (df["temperature"] > 60)).any():
-            logging.warning(f"[RANGE ISSUE] Temperature out of bounds in {name}")
-
-    if "humidity" in df.columns:
-        if ((df["humidity"] < 0) | (df["humidity"] > 100)).any():
-            logging.warning(f"[RANGE ISSUE] Humidity out of bounds in {name}")
-
-    if "wind_speed" in df.columns:
-        if (df["wind_speed"] < 0).any():
-            logging.warning(f"[RANGE ISSUE] Negative wind speed in {name}")
-
-    logging.info(f"[RANGE CHECK COMPLETE] {name}")
-
-
-# ----------------------------
-# DB VALIDATION
-# ----------------------------
-def check_row_counts(table, expected_min=1):
-    with engine.connect() as conn:
-        count = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
-
-    if count < expected_min:
-        raise ValueError(f"[ROW COUNT ERROR] {table} has only {count} rows")
-
-    logging.info(f"[ROW COUNT OK] {table} rows={count}")
+_CREATE_IDX_AIR = """
+CREATE INDEX IF NOT EXISTS idx_air_location_fetched
+    ON air_quality_observations (location, fetched_at DESC);
+"""
 
 
-def check_referential_integrity():
-    with engine.connect() as conn:
-        orphan_rows = conn.execute(
-            text("""
-            SELECT COUNT(*)
-            FROM daily_forecast d
-            LEFT JOIN location l
-            ON d.location_id = l.location_id
-            WHERE l.location_id IS NULL
-        """)
-        ).scalar()
-
-    if orphan_rows > 0:
-        raise ValueError(f"[FK ERROR] {orphan_rows} orphan rows in daily_forecast")
-
-    logging.info("[FK CHECK PASS] Referential integrity OK")
+def create_tables():
+    """Idempotently create all required tables and indexes."""
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(_CREATE_WEATHER)
+        cur.execute(_CREATE_AIR)
+        cur.execute(_CREATE_IDX_WEATHER)
+        cur.execute(_CREATE_IDX_AIR)
+        conn.commit()
+    print("[DB] Tables ready.")
 
 
-# ----------------------------
-# UPSERT
-# ----------------------------
-def upsert_dataframe(table_name, df, conflict_cols):
-    df = df.where(pd.notnull(df), None)
-
-    cols = list(df.columns)
-    col_names = ", ".join(cols)
-    placeholders = ", ".join([f":{c}" for c in cols])
-
-    update_cols = [c for c in cols if c not in conflict_cols]
-    update_sql = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
-
-    sql = f"""
-    INSERT INTO {table_name} ({col_names})
-    VALUES ({placeholders})
-    ON CONFLICT ({", ".join(conflict_cols)})
-    DO UPDATE SET {update_sql};
+# ── Loaders ────────────────────────────────────────────────────────────────────
+def load_weather(data: dict) -> int:
+  
+    sql = """
+        INSERT INTO weather_observations (
+            location, fetched_at, temperature_f, feels_like_f,
+            weather_code, condition, emoji, is_day,
+            wind_speed_mph, humidity_pct, visibility_mi, pressure_inhg,
+            dew_point_f, timezone, daily_forecast
+        ) VALUES (
+            %(location)s, %(fetched_at)s, %(temperature_f)s, %(feels_like_f)s,
+            %(weather_code)s, %(condition)s, %(emoji)s, %(is_day)s,
+            %(wind_speed_mph)s, %(humidity_pct)s, %(visibility_mi)s, %(pressure_inhg)s,
+            %(dew_point_f)s, %(timezone)s, %(daily_forecast)s
+        )
+        RETURNING id;
     """
+    row = dict(data)
+    row["daily_forecast"] = json.dumps(row.get("daily_forecast", []))
 
-    with engine.begin() as conn:
-        conn.execute(text(sql), df.to_dict(orient="records"))
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, row)
+        new_id = cur.fetchone()[0]
+        conn.commit()
+    print(f"[DB] Weather row inserted: id={new_id}")
+    return new_id
 
-    logging.info(f"[UPSERT DONE] {table_name} rows={len(df)}")
 
-
-# ----------------------------
-# MAIN PIPELINE
-# ----------------------------
-def main():
-    try:
-        logging.info("===== ETL START =====")
-
-        # -------------------------
-        # LOAD FILES
-        # -------------------------
-        daily = pd.read_csv(DAILY_FILE)
-        current = pd.read_csv(CURRENT_FILE)
-
-        # -------------------------
-        # VALIDATION - RAW INPUT
-        # -------------------------
-        validate_dataframe(daily, "daily_forecast_raw")
-        validate_dataframe(current, "current_weather_raw")
-
-        # -------------------------
-        # TRANSFORM
-        # -------------------------
-        sample = daily.iloc[0]
-
-        loc_df = pd.DataFrame(
-            [
-                {
-                    "formatted_address": sample["target_address"],
-                    "latitude": sample["latitude"],
-                    "longitude": sample["longitude"],
-                    "timezone_id": sample["timezone_id"],
-                }
-            ]
+def load_air_quality(data: dict) -> int:
+  
+    sql = """
+        INSERT INTO air_quality_observations (
+            location, fetched_at, us_aqi, aqi_category, aqi_color,
+            pm2_5, pm10, ozone_ppb, no2_ppb, so2_ppb, co_ppb,
+            primary_pollutant, primary_value, hourly_trend
+        ) VALUES (
+            %(location)s, %(fetched_at)s, %(us_aqi)s, %(aqi_category)s, %(aqi_color)s,
+            %(pm2_5)s, %(pm10)s, %(ozone_ppb)s, %(no2_ppb)s, %(so2_ppb)s, %(co_ppb)s,
+            %(primary_pollutant)s, %(primary_value)s, %(hourly_trend)s
         )
+        RETURNING id;
+    """
+    row = dict(data)
+    row["hourly_trend"] = json.dumps(row.get("hourly_trend", []))
 
-        upsert_dataframe("location", loc_df, ["formatted_address"])
-
-        with engine.connect() as conn:
-            loc_id = conn.execute(
-                text("SELECT location_id FROM location WHERE formatted_address=:addr"),
-                {"addr": sample["target_address"]},
-            ).scalar()
-
-        if not loc_id:
-            raise ValueError("[FK ERROR] location_id not found after insert")
-
-        daily["location_id"] = loc_id
-        current["location_id"] = loc_id
-
-        # -------------------------
-        # CLEAN COLUMNS
-        # -------------------------
-        daily = daily.drop_duplicates()
-
-        daily = daily[
-            [
-                c
-                for c in daily.columns
-                if c
-                in {
-                    "location_id",
-                    "forecast_date",
-                    "temperature_max",
-                    "temperature_min",
-                    "apparent_temperature_max",
-                    "apparent_temperature_min",
-                    "precipitation_sum",
-                    "precipitation_probability_max",
-                    "uv_index_max",
-                    "wind_speed_max",
-                    "weather_code_id",
-                    "sunrise",
-                    "sunset",
-                    "observation_time",
-                }
-            ]
-        ]
-
-        current = current.rename(
-            columns={
-                "temperature_2m": "temperature",
-                "relative_humidity_2m": "humidity",
-                "wind_speed_10m": "wind_speed",
-            }
-        )
-
-        current = current[
-            [
-                c
-                for c in current.columns
-                if c
-                in {
-                    "location_id",
-                    "observed_at",
-                    "temperature",
-                    "weather_code",
-                    "humidity",
-                    "wind_speed",
-                }
-            ]
-        ]
-
-        # -------------------------
-        # VALIDATION - TRANSFORMED DATA
-        # -------------------------
-        validate_dataframe(daily, "daily_forecast_clean")
-        validate_dataframe(current, "current_weather_clean")
-
-        validate_ranges(current, "current_weather")
-        validate_ranges(daily, "daily_forecast")
-
-        # -------------------------
-        # LOAD
-        # -------------------------
-        upsert_dataframe("daily_forecast", daily, ["location_id", "forecast_date"])
-        upsert_dataframe("current_weather", current, ["location_id", "observed_at"])
-
-        # -------------------------
-        # POST LOAD VALIDATION
-        # -------------------------
-        check_row_counts("location", 1)
-        check_row_counts("daily_forecast", 1)
-        check_row_counts("current_weather", 1)
-
-        check_referential_integrity()
-
-        logging.info("===== ETL SUCCESS =====")
-
-    except Exception as e:
-        logging.error(f"[ETL FAILED] {str(e)}")
-        raise
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, row)
+        new_id = cur.fetchone()[0]
+        conn.commit()
+    print(f"[DB] Air quality row inserted: id={new_id}")
+    return new_id
 
 
-if __name__ == "__main__":
-    main()
+# ── Query helpers (used by app.py) ─────────────────────────────────────────────
+def get_latest_weather(location: str) -> dict | None:
+    """Fetch the most recent weather row for a location (case-insensitive partial match)."""
+    sql = """
+        SELECT * FROM weather_observations
+        WHERE location ILIKE %(pattern)s
+        ORDER BY fetched_at DESC
+        LIMIT 1;
+    """
+    with _get_conn() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(sql, {"pattern": f"%{location}%"})
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_latest_air(location: str) -> dict | None:
+    """Fetch the most recent air quality row for a location."""
+    sql = """
+        SELECT * FROM air_quality_observations
+        WHERE location ILIKE %(pattern)s
+        ORDER BY fetched_at DESC
+        LIMIT 1;
+    """
+    with _get_conn() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(sql, {"pattern": f"%{location}%"})
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_hourly_aqi_trend(location: str, hours: int = 48) -> list[dict]:
+    """
+    Return hourly AQI trend list from the latest air quality row for a location.
+    Returns up to `hours` entries centred around now.
+    """
+    row = get_latest_air(location)
+    if not row:
+        return []
+    trend = row.get("hourly_trend") or []
+    if isinstance(trend, str):
+        trend = json.loads(trend)
+    return trend[:hours]
