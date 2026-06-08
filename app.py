@@ -42,6 +42,15 @@ AQI_BANDS = [
     (200, "Unhealthy",                      "#e74c3c"),
     (300, "Very Unhealthy",                 "#8e44ad"),
 ]
+[
+    (50,  "Good",                           "#2ecc71"),
+    (100, "Moderate: Extremely sensitive individuals (may experience respiratory symptoms",                       "#f1c40f"),
+    (150, "Unhealthy for Sensitive Groups: People with lung disease (asthma, COPD), elderly, children, and pregnant individuals", "#f39c12"),
+    (200, "Unhealthy: Everyone (vulnerable groups experience more severe effects; heart/lung disease patients at high risk)",                      "#e74c3c"),
+    (300, "Very Unhealthy: Everyone (significant risk; vulnerable groups should avoid all outdoor physical activity)",                 "#8e44ad"),
+    (500, "Hazardous:Everyone (emergency conditions; entire population is highly likely to be affected)",                      "#7e0023")
+]
+
 
 def aqi_color(val):
     if val is None:
