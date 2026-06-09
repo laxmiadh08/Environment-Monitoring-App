@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS weather_observations (
     dew_point_f     NUMERIC(5,1),
     timezone        TEXT,
     daily_forecast  JSONB,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_weather_location_fetched UNIQUE (location, fetched_at)
 );
 """
 
@@ -62,7 +63,8 @@ CREATE TABLE IF NOT EXISTS air_quality_observations (
     primary_pollutant TEXT,
     primary_value     NUMERIC(10,3),
     hourly_trend      JSONB,
-    created_at        TIMESTAMPTZ DEFAULT NOW()
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_air_location_fetched UNIQUE (location, fetched_at)
 );
 """
 
@@ -103,6 +105,20 @@ def load_weather(data: dict) -> int:
             %(wind_speed_mph)s, %(humidity_pct)s, %(visibility_mi)s, %(pressure_inhg)s,
             %(dew_point_f)s, %(timezone)s, %(daily_forecast)s
         )
+        ON CONFLICT (location, fetched_at) DO UPDATE SET
+            temperature_f   = EXCLUDED.temperature_f,
+            feels_like_f    = EXCLUDED.feels_like_f,
+            weather_code    = EXCLUDED.weather_code,
+            condition       = EXCLUDED.condition,
+            emoji           = EXCLUDED.emoji,
+            is_day          = EXCLUDED.is_day,
+            wind_speed_mph  = EXCLUDED.wind_speed_mph,
+            humidity_pct    = EXCLUDED.humidity_pct,
+            visibility_mi   = EXCLUDED.visibility_mi,
+            pressure_inhg   = EXCLUDED.pressure_inhg,
+            dew_point_f     = EXCLUDED.dew_point_f,
+            timezone        = EXCLUDED.timezone,
+            daily_forecast  = EXCLUDED.daily_forecast
         RETURNING id;
     """
     row = dict(data)
@@ -112,7 +128,7 @@ def load_weather(data: dict) -> int:
         cur.execute(sql, row)
         new_id = cur.fetchone()[0]
         conn.commit()
-    print(f"[DB] Weather row inserted: id={new_id}")
+    print(f"[DB] Weather row upserted: id={new_id}")
     return new_id
 
 
@@ -128,6 +144,19 @@ def load_air_quality(data: dict) -> int:
             %(pm2_5)s, %(pm10)s, %(ozone_ppb)s, %(no2_ppb)s, %(so2_ppb)s, %(co_ppb)s,
             %(primary_pollutant)s, %(primary_value)s, %(hourly_trend)s
         )
+        ON CONFLICT (location, fetched_at) DO UPDATE SET
+            us_aqi            = EXCLUDED.us_aqi,
+            aqi_category      = EXCLUDED.aqi_category,
+            aqi_color         = EXCLUDED.aqi_color,
+            pm2_5             = EXCLUDED.pm2_5,
+            pm10              = EXCLUDED.pm10,
+            ozone_ppb         = EXCLUDED.ozone_ppb,
+            no2_ppb           = EXCLUDED.no2_ppb,
+            so2_ppb           = EXCLUDED.so2_ppb,
+            co_ppb            = EXCLUDED.co_ppb,
+            primary_pollutant = EXCLUDED.primary_pollutant,
+            primary_value     = EXCLUDED.primary_value,
+            hourly_trend      = EXCLUDED.hourly_trend
         RETURNING id;
     """
     row = dict(data)
@@ -137,7 +166,7 @@ def load_air_quality(data: dict) -> int:
         cur.execute(sql, row)
         new_id = cur.fetchone()[0]
         conn.commit()
-    print(f"[DB] Air quality row inserted: id={new_id}")
+    print(f"[DB] Air quality row upserted: id={new_id}")
     return new_id
 
 

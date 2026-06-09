@@ -32,14 +32,9 @@ def _emoji_for(code: int) -> tuple[str, str]:
     return "🌡️", "🌡️"
 
 
-# ── Weather code map (loaded from XLS) ────────────────────────────────────────
+# Weather code map (loaded from Excel) ────────────────────────────────────────
 def _load_weather_codes(path: str = "data/weather_codes.xlsx") -> dict:
-    """
-    Reads the weather code XLS/XLSX.  Handles the real-world format where:
-      - The Code column may contain comma-separated values like "1, 2, 3"
-      - The Code value  has trailing characters like "95 *"
-    Returns a dict mapping int(code) → {condition, emoji_day, emoji_night}.
-    """
+
     import re
 
     # Accept both .xls and .xlsx
@@ -63,7 +58,7 @@ def _load_weather_codes(path: str = "data/weather_codes.xlsx") -> dict:
     df.columns = [str(c).strip().lower() for c in df.columns]
     print(f"[INFO] {used_path} columns: {list(df.columns)}")
 
-    # Find code + description columns flexibly
+    # Find code and description columns 
     col_code = next((c for c in df.columns if "code" in c), None)
     col_desc = next((c for c in df.columns if c in ("description", "condition", "weather", "label")), None)
     col_day  = next((c for c in df.columns if "day" in c or c == "emoji"), None)
@@ -85,7 +80,7 @@ def _load_weather_codes(path: str = "data/weather_codes.xlsx") -> dict:
             continue
 
         for code in codes:
-            # Prefer emoji from XLS if present, else use built-in map
+           
             if col_day and pd.notna(row.get(col_day)):
                 emoji_day = str(row[col_day])
                 emoji_night = str(row[col_night]) if col_night and pd.notna(row.get(col_night)) else emoji_day
@@ -130,7 +125,7 @@ def get_weather_info(code: int, is_day: int) -> dict:
     emoji = info["emoji_day"] if is_day else info["emoji_night"]
     return {"condition": info["condition"], "emoji": emoji}
 
-# ── Geocoding ─────────────────────────────────────────────────────────────────
+#Geocoding 
 def geocode(location_str: str) -> tuple[float, float, str]:
     """Return (lat, lon, display_name)."""
     geolocator = Nominatim(user_agent="env_health_monitor/1.0")
@@ -142,7 +137,7 @@ def geocode(location_str: str) -> tuple[float, float, str]:
     except GeocoderTimedOut:
         raise RuntimeError("Geocoder timed out — try again.")
 
-# ── API fetchers ───────────────────────────────────────────────────────────────
+#API fetchers 
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_URL     = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
@@ -181,7 +176,7 @@ def _fetch_air_quality(lat: float, lon: float) -> dict:
     r.raise_for_status()
     return r.json()
 
-# ── Transform ──────────────────────────────────────────────────────────────────
+#Transform 
 def transform_weather(raw: dict, location_name: str) -> dict:
     cur = raw.get("current", {})
     code   = cur.get("weather_code", 0)
@@ -293,7 +288,7 @@ def transform_air(raw: dict, location_name: str) -> dict:
     }
 
 
-# ── Orchestrator ───────────────────────────────────────────────────────────────
+#Orchestrator
 def run(location_str: str = "Louisville, KY") -> dict:
     print(f"[ETL] Geocoding: {location_str!r}")
     lat, lon, display_name = geocode(location_str)
