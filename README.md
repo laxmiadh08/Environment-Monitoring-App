@@ -23,9 +23,9 @@ projectscreenshot/
 
 
 ## Scripts and data flow
-main.py: Production pipeline that fetches the weather and air data and merges them along with weather code descriptions
-load.py: DB read helpers (get_latest_weather, get_latest_air, get_hourly_aqi_trend)
-app.py:  Dash layout, callbacks, health-risk logic
+- main.py: Production pipeline that fetches the weather and air data and merges them along with weather code descriptions
+- load.py: DB read helpers (get_latest_weather, get_latest_air, get_hourly_aqi_trend)
+- app.py:  Dash layout, callbacks, health-risk logic
 
 
 ## Workfllow
