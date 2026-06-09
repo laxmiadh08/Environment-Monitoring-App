@@ -14,12 +14,13 @@ Plotly Dash dashboard that combines real-time weather and air quality data to as
 ## Project Structure
 
 data/ CSV weather_codes.xlsx
+projectscreenshot/
 - app.py        
 - main.py       
 - load.py       
 - README.md
 - requirements.txt
-projectscreenshot/
+
 
 ## Scripts and data flow
 main.py: Production pipeline that fetches the weather and air data and merges them along with weather code descriptions
