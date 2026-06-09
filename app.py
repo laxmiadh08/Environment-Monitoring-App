@@ -25,23 +25,27 @@ COLORS = {
     "muted":    "#6b7280",
     "border":   "#e5e7eb",
     # Risk level palette
-    "risk_moderate":  "#f39c12",
+    "risk_moderate":  "#f2b047",
     "risk_high":      "#e67e22",
     "risk_extreme":   "#8e1a1a",
     "risk_good":      "#27ae60",
 }
+#   "risk_moderate":  "#f2b047",
+#     "risk_high":      "#e67e22",
+#     "risk_extreme":   "#8e1a1a",
+#     "risk_good":      "#27ae60",
 
 CARD_STYLE = {
     "background": COLORS["card"],
     "borderRadius": "12px",
-    "padding": "8px",
-    "marginBottom": "8px",
+    "padding": "16px",
+    "marginBottom": "16px",
     "boxShadow": "0 1px 4px rgba(0,0,0,.08)",
 }
 
 # ── AQI category
 AQI_BANDS = [
-    (50,  "Good....",                           "#2ecc71"),
+    (50,  "Good",                           "#2ecc71"),
     (100, "Moderate",                           "#f1c40f"),
     (150, "Unhealthy for Sensitive Groups",     "#f39c12"),
     (200, "Unhealthy",                          "#e74c3c"),
@@ -65,8 +69,8 @@ def aqi_label(val):
     return "Hazardous"
 
 
-# ── Health risk evaluation
-# Returns (level, bg_color, icon, title, conditions_text, advisory_text)
+# Health risk logic
+
 def get_health_risk(temp_f, humidity_pct, aqi_val, primary_pollutant, primary_value):
     temp      = temp_f       if temp_f       is not None else 0
     humidity  = humidity_pct if humidity_pct is not None else 0
@@ -134,8 +138,8 @@ def get_health_risk(temp_f, humidity_pct, aqi_val, primary_pollutant, primary_va
             ),
             "bullets": [
                 "🌅  Schedule vigorous activity before 9 AM to avoid peak heat and AQI.",
-                "💧  Drink water regularly, even if you do not feel thirsty.",
-                "🧴  Apply sunscreen; wear light, loose-fitting clothing.",
+                "💧  Drink water regularly.",
+                "🧴  Apply sunscreen; wear light, breathable clothing.",
                 "👁️  Monitor air quality updates throughout the day.",
                 "🏠  Consider moving prolonged outdoor activities indoors.",
             ],
@@ -242,7 +246,7 @@ app.layout = html.Div(
 
         # Main container
         html.Div(
-            style={"maxWidth": "980px", "margin": "0 auto", "padding": "24px 16px"},
+            style={"maxWidth": "980px", "margin": "0 auto", "padding": "16px"},
             children=[
 
                 # Search bar
@@ -482,7 +486,7 @@ def render_content(data, tab):
                 html.Span(f"   ·   AQI: {aqi_val}" if aqi_val is not None else "",
                           style={"fontWeight": "700", "fontSize": "14px",
                                  "marginLeft": "4px"}),
-            ], style={"background": "rgba(0,0,0,0.18)", "borderRadius": "8px",
+            ], style={"background": risk["color"] +"44", "border": risk["color"] +"99", "borderRadius": "8px",
                       "padding": "7px 14px", "marginBottom": "12px",
                       "fontSize": "14px"}),
 
@@ -500,7 +504,7 @@ def render_content(data, tab):
             ], style={"borderTop": "1px solid rgba(255,255,255,0.2)",
                       "paddingTop": "8px"}),
 
-        ], style={"background": risk["color"], "color": "white",
+        ], style={"background": risk["color"] +"22", "color": risk["color"],
                   "borderRadius": "10px", "padding": "16px 20px",
                   "marginBottom": "16px"})
 
