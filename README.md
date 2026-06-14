@@ -70,4 +70,5 @@ Level and Conditions
     - 🚨 Extreme Danger | Temp > 95 °F + (Humidity > 60% or AQI > 150), or AQI > 300 
 
 sources for Health risk:
-- https://www.who.int/news-room/fact-sheets/detail/climate-change-heat-and-health#:~:text=As%20a%20result%2C%20heat%20extremes,and%20cause%20acute%20kidney%20injury.
+- https://www.who.int/news-room/fact-sheets/detail/climate-change-heat-and-health#:~:text=As%20a%20result%2C%20heat%20extremes,and%20cause%20acute%20kidney%20injury
+- https://www.epa.gov/air-research/research-health-effects-air-pollution
