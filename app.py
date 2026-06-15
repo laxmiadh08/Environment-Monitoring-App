@@ -169,7 +169,7 @@ def get_health_risk(temp_f, humidity_pct, aqi_val, primary_pollutant, primary_va
             "🌿  Air quality and temperature are within safe ranges.",
             "💧  Maintain normal hydration habits.",
             "🏃  Outdoor exercise is suitable for all groups.",
-            "📱  Check back later for any changing conditions.",
+            
         ],
     }
 
