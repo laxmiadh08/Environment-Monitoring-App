@@ -8,7 +8,7 @@ Plotly Dash dashboard that combines real-time weather and air quality data to as
 - Air quality — US AQI with pollutant breakdown (O₃, PM2.5, PM10, NO₂, CO, SO₂)
 - Health risk assessment — evaluates the combination of temperature, humidity, and AQI to classify conditions as Low / Moderate / High / Extreme Danger, with tailored advisories and action bullets
 - Hourly AQI chart — 48-hour bar chart color-coded by AQI band
-- 7-day forecast — daily high/low with weather emoji and average AQI trend
+- 7-day forecast — daily high/low with weather emoji-icons and average AQI trend
 - City search — look up any city
 
 ## Project Structure
